@@ -73,6 +73,29 @@ class TopGameWithStreamers:
 
 
 @dataclass
+class Stream:
+    """A live stream entry from GET /helix/streams."""
+
+    user_id: str
+    user_name: str
+    user_login: str
+    game_id: str
+    title: str
+    viewer_count: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Stream":
+        return cls(
+            user_id=data.get("user_id", ""),
+            user_name=data.get("user_name", ""),
+            user_login=data.get("user_login", ""),
+            game_id=data.get("game_id", ""),
+            title=data.get("title", ""),
+            viewer_count=data.get("viewer_count", 0),
+        )
+
+
+@dataclass
 class Clip:
     id: str
     broadcaster_id: str
