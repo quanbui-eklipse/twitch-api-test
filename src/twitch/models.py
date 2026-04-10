@@ -44,6 +44,35 @@ class TopGame:
 
 
 @dataclass
+class TopGameWithStreamers:
+    """TopGame enriched with a live streamer count from GET /helix/streams."""
+
+    id: str
+    name: str
+    box_art_url: str
+    igdb_id: str
+    streamer_count: int    # number of live streamers (≤ 100 per API page)
+    count_is_capped: bool  # True when real count exceeds 100 (shown as "100+")
+
+    @property
+    def streamer_count_display(self) -> str:
+        return f"{self.streamer_count}+" if self.count_is_capped else str(self.streamer_count)
+
+    @classmethod
+    def from_top_game(
+        cls, game: "TopGame", streamer_count: int, count_is_capped: bool
+    ) -> "TopGameWithStreamers":
+        return cls(
+            id=game.id,
+            name=game.name,
+            box_art_url=game.box_art_url,
+            igdb_id=game.igdb_id,
+            streamer_count=streamer_count,
+            count_is_capped=count_is_capped,
+        )
+
+
+@dataclass
 class Clip:
     id: str
     broadcaster_id: str

@@ -70,6 +70,8 @@ def test_raises_on_auth_failure():
         _ = auth.token
 
 
-def test_raises_when_credentials_missing():
+def test_raises_when_credentials_missing(monkeypatch):
+    monkeypatch.delenv("TWITCH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("TWITCH_CLIENT_SECRET", raising=False)
     with pytest.raises(TwitchAuthError):
         AppAccessToken(client_id=None, client_secret=None)

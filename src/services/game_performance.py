@@ -17,10 +17,12 @@ from typing import Optional
 
 from ..twitch.api.games import GamesAPI
 from ..twitch.api.clips import ClipsAPI
+from ..twitch.api.streams import StreamsAPI
 from ..twitch.models import (
     Clip,
     Game,
     TopGame,
+    TopGameWithStreamers,
     GamePerformanceStats,
     GamePerformanceReport,
 )
@@ -36,9 +38,10 @@ class GamePerformanceService:
         clips_api: ClipsAPI instance.
     """
 
-    def __init__(self, games_api: GamesAPI, clips_api: ClipsAPI):
+    def __init__(self, games_api: GamesAPI, clips_api: ClipsAPI, streams_api: StreamsAPI = None):
         self._games = games_api
         self._clips = clips_api
+        self._streams = streams_api
 
     # ------------------------------------------------------------------
     # Public interface
@@ -99,6 +102,39 @@ class GamePerformanceService:
         """Return the single game that has generated the most clip views."""
         report = self.get_report(broadcaster_id)
         return report.top_game_by_views()
+
+    def get_top_games_with_streamer_count(
+        self, count: int = 10
+    ) -> list[TopGameWithStreamers]:
+        """
+        Return top Twitch games right now, each enriched with a live
+        streamer count.
+
+        Makes 1 API call for the game list + 1 per game for stream counts.
+        Counts are capped at 100 per Twitch API page; games with more live
+        streamers are marked with count_is_capped=True (displayed as "100+").
+
+        Args:
+            count: Number of top games to fetch (max 100).
+
+        Returns:
+            List of TopGameWithStreamers ordered by Twitch viewer rank.
+
+        Raises:
+            RuntimeError: If the service was created without a StreamsAPI.
+        """
+        if self._streams is None:
+            raise RuntimeError(
+                "StreamsAPI is required for get_top_games_with_streamer_count(). "
+                "Pass streams_api= when constructing GamePerformanceService."
+            )
+
+        top_games = self._games.get_top_games(first=min(count, 100))
+        result: list[TopGameWithStreamers] = []
+        for game in top_games:
+            n, is_capped = self._streams.get_live_stream_count_for_game(game.id)
+            result.append(TopGameWithStreamers.from_top_game(game, n, is_capped))
+        return result
 
     def get_trending_not_streamed(
         self, broadcaster_id: str, top_games_count: int = 20

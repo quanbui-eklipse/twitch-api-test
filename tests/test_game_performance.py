@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from src.twitch.models import Clip, Game, TopGame
 from src.twitch.api.games import GamesAPI
 from src.twitch.api.clips import ClipsAPI
+from src.twitch.api.streams import StreamsAPI
 from src.services.game_performance import GamePerformanceService
 
 
@@ -150,3 +151,83 @@ def test_get_trending_not_streamed_delegates_to_report():
     svc = make_service(clips=clips, games=[], top_games=top_games)
     result = svc.get_trending_not_streamed("999")
     assert result[0].name == "NewGame"
+
+
+# ---------------------------------------------------------------------------
+# Tests: get_top_games_with_streamer_count
+# ---------------------------------------------------------------------------
+
+def make_service_with_streams(top_games=None, stream_counts=None):
+    """Helper that wires up a StreamsAPI mock alongside the usual mocks."""
+    games_api = MagicMock(spec=GamesAPI)
+    clips_api = MagicMock(spec=ClipsAPI)
+    streams_api = MagicMock(spec=StreamsAPI)
+
+    games_api.get_top_games.return_value = top_games or []
+    # stream_counts: list of (count, is_capped) tuples, one per game
+    streams_api.get_live_stream_count_for_game.side_effect = stream_counts or []
+
+    return GamePerformanceService(
+        games_api=games_api,
+        clips_api=clips_api,
+        streams_api=streams_api,
+    )
+
+
+def test_top_games_with_streamer_count_returns_enriched_list():
+    top_games = [
+        TopGame(id="33214",  name="Fortnite", box_art_url="", igdb_id=""),
+        TopGame(id="516575", name="VALORANT", box_art_url="", igdb_id=""),
+    ]
+    svc = make_service_with_streams(
+        top_games=top_games,
+        stream_counts=[(72, False), (100, True)],
+    )
+    result = svc.get_top_games_with_streamer_count(count=2)
+
+    assert len(result) == 2
+    assert result[0].name == "Fortnite"
+    assert result[0].streamer_count == 72
+    assert result[0].count_is_capped is False
+    assert result[0].streamer_count_display == "72"
+
+    assert result[1].name == "VALORANT"
+    assert result[1].streamer_count == 100
+    assert result[1].count_is_capped is True
+    assert result[1].streamer_count_display == "100+"
+
+
+def test_top_games_streamer_count_calls_streams_api_per_game():
+    top_games = [
+        TopGame(id="33214",  name="Fortnite", box_art_url="", igdb_id=""),
+        TopGame(id="516575", name="VALORANT", box_art_url="", igdb_id=""),
+        TopGame(id="21779",  name="League",   box_art_url="", igdb_id=""),
+    ]
+    svc = make_service_with_streams(
+        top_games=top_games,
+        stream_counts=[(50, False), (100, True), (88, False)],
+    )
+    svc.get_top_games_with_streamer_count(count=3)
+
+    calls = [c.args[0] for c in svc._streams.get_live_stream_count_for_game.call_args_list]
+    assert calls == ["33214", "516575", "21779"]
+
+
+def test_top_games_streamer_count_raises_without_streams_api():
+    svc = make_service(clips=[], games=[], top_games=[])  # no streams_api
+    with pytest.raises(RuntimeError, match="StreamsAPI is required"):
+        svc.get_top_games_with_streamer_count()
+
+
+def test_streamer_count_display_exact():
+    from src.twitch.models import TopGameWithStreamers
+    g = TopGameWithStreamers(id="1", name="X", box_art_url="", igdb_id="",
+                             streamer_count=37, count_is_capped=False)
+    assert g.streamer_count_display == "37"
+
+
+def test_streamer_count_display_capped():
+    from src.twitch.models import TopGameWithStreamers
+    g = TopGameWithStreamers(id="1", name="X", box_art_url="", igdb_id="",
+                             streamer_count=100, count_is_capped=True)
+    assert g.streamer_count_display == "100+"
